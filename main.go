@@ -19,16 +19,39 @@ package main
 import (
 	"fmt"
 	"os"
+
+    "internal/metainfo"
 )
 
+type TrackerParams struct {
+	infoHash   []byte
+	peerId     []byte
+	port       uint16
+	uploaded   int
+	downloaded int
+	left       int
+	numWant    int
+	compact    bool
+}
+
+func usage(prog string) {
+	fmt.Printf("usage: %s <file.torrent>\n", prog)
+}
+
 func main() {
-	// Small test code
-	src, _ := os.ReadFile("alice.torrent")
-	pr := NewParser(string(src))
-	val, err := pr.parse()
+	if len(os.Args) < 2 {
+		usage(os.Args[0])
+        return
+	}
+	torrent, err := os.ReadFile(os.Args[1])
 	if err != nil {
-		fmt.Println(err)
+		fmt.Printf("Could not open torrent file %s\n", os.Args[1])
 		return
 	}
-	fmt.Printf("Got value: %v\n", val)
+    meta, err := metainfo.ParseMetaInfo(torrent)
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+    fmt.Println(meta)
 }

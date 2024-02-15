@@ -19,7 +19,7 @@
  * does the opposite from what is done here.
  */
 
-package main
+package metainfo
 
 import (
 	"fmt"
@@ -27,49 +27,49 @@ import (
 )
 
 // Encodes strings: <length>:<text>
-func EncodeStr(text string) string {
+func encodeStr(text string) string {
 	return fmt.Sprintf("%d:%s", len(text), text)
 }
 
 // Encodes integers: i<num>e
-func EncodeInt(num int) string {
+func encodeInt(num int) string {
 	return fmt.Sprintf("i%de", num)
 }
 
 // Encodes lists: l(<value>)*e
-func EncodeList(vals []any) string {
+func encodeList(vals []any) string {
 	var build strings.Builder
 	build.WriteByte('l')
 	for _, val := range vals {
-		build.WriteString(encodeValue(val))
+		build.WriteString(encodeVal(val))
 	}
 	build.WriteByte('e')
 	return build.String()
 }
 
 // Encodes dicts: d(<key><value>)*e
-func EncodeDict(dict map[string]any) string {
+func encodeDict(dict map[string]any) string {
 	var build strings.Builder
 	build.WriteByte('d')
 	for key, val := range dict {
-		build.WriteString(EncodeStr(key))
-		build.WriteString(encodeValue(val))
+		build.WriteString(encodeStr(key))
+		build.WriteString(encodeVal(val))
 	}
 	build.WriteByte('e')
 	return build.String()
 }
 
-// General encoding function (don't use externally)
-func encodeValue(val any) string {
+// General encoding function (don't use outside of this file)
+func encodeVal(val any) string {
 	switch v := val.(type) {
 	case int:
-		return EncodeInt(v)
+		return encodeInt(v)
 	case string:
-		return EncodeStr(v)
+		return encodeStr(v)
 	case []any:
-		return EncodeList(v)
+		return encodeList(v)
 	case map[string]any:
-		return EncodeDict(v)
+		return encodeDict(v)
 	}
 	panic("What?!!!") // should never happen
 }

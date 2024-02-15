@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-/* The torrent protocol makes use of a small data markup language called
+/* The BitTorrent protocol makes use of a small data markup language called
  * 'bencoding' by the official spec. Here, I will call it B-encoding. It
  * determines a standard text representation for strings, integers, lists and
  * dictionaries. In a nutshell:
@@ -28,70 +28,51 @@
  * This file implements a simple parser for B-encoding.
  */
 
-package main
+package metainfo
 
 import (
+	"bytes"
 	"fmt"
-	"strconv"
-	"strings"
 )
 
-// There are few parsing errors in the language of B-encoding; basically just
-// invalid string and integer values, and lack of 'e' termination in the
-// structures that require them.
-
-type parseErrCode byte
-
-const (
-	parseErrInvalidStr = iota
-	parseErrInvalidInt
-	parseErrUnbalancedDelim
-)
-
-// A parsing error is defined by its type, a context that makes it clearer to
-// the user what went wrong, and the position it happened in the text, given as
-// 1-based column index
-type ParseError struct {
-	code    parseErrCode
-	context string
-	pos     int
+// A parse error is defined by its reason, a textual context extracted from
+// the encoded text (so that the user may quickly see why the error happened)
+// and the position (column) where it happened
+type parseError struct {
+	reason, context string
+	pos             int
 }
 
-func (err *ParseError) Error() string {
-	var msg string
-	switch err.code {
-	case parseErrInvalidStr:
-		msg = fmt.Sprintf("'%s' is not a valid string", err.context)
-	case parseErrInvalidInt:
-		msg = fmt.Sprintf("'%s' is not a valid integer", err.context)
-	case parseErrUnbalancedDelim:
-		msg = fmt.Sprintf("delimiter '%s' isn't terminated", err.context)
-	default:
-		msg = fmt.Sprintf("weird error %d", err.code)
-	}
-	return fmt.Sprintf("Error at column %d: %s", err.pos, msg)
+func (err *parseError) Error() string {
+	return fmt.Sprintf(`[!] Parsing error at column %d: %s
+Relevant portion of the text: %s`, err.pos, err.reason, err.context)
 }
 
-type Parser struct {
-	enc string // B-encoded text
+// "Union" type for generic B-encoded values
+type value struct {
+
+}
+
+type parser struct {
+	enc []byte // B-encoded text
 	i   int    // current position in the encoded string
 }
 
-func NewParser(enc string) *Parser {
-	return &Parser{enc: enc, i: 0}
+func newParser(enc []byte) *parser {
+	return &parser{enc: enc, i: 0}
 }
 
 // Reports errors with a piece of context from the encoded text itself,
 // going from the current parsing position to the endContext parameter. If
 // endContext is negative, the whole string after the current position is used
 // as context
-func (p *Parser) err(code parseErrCode, endContext int) *ParseError {
+func (p *parser) err(reason string, endContext int) *parseError {
 	if endContext < 0 {
 		endContext = len(p.enc)
 	}
-	return &ParseError{
-		code:    code,
-		context: p.enc[p.i:endContext],
+	return &parseError{
+		reason:  reason,
+		context: string(p.enc[p.i:endContext]),
 		pos:     p.i + 1,
 	}
 }
@@ -99,67 +80,87 @@ func (p *Parser) err(code parseErrCode, endContext int) *ParseError {
 // Reports delimiter errors specifically, where the context is the delimiter
 // itself and its position is used as the error position, instead of the
 // current one. This makes error messages clearer
-func (p *Parser) errDelim(delim string, start int) *ParseError {
-	return &ParseError{
-		code:    parseErrUnbalancedDelim,
+func (p *parser) errDelim(delim string, start int) *parseError {
+	return &parseError{
+		reason:  fmt.Sprintf("unmatched '%s' delimiter", delim),
 		context: delim,
 		pos:     start + 1,
 	}
 }
 
+// Convert fixed-size ASCII bytes to int
+func fromAscii(ascii []byte, n int) (int, bool) {
+	var num = 0
+	var exp = 1
+	for i := n - 1; i >= 0; i-- {
+		if ascii[i] < '0' || ascii[i] > '9' {
+			return 0, false
+		}
+		num += int(ascii[i]-'0') * exp
+		exp *= 10
+	}
+	return num, true
+}
+
 // Parses strings: <length>:<text>
-func (p *Parser) ParseStr() (string, error) {
-	i := strings.IndexByte(p.enc[p.i:], ':')
+func (p *parser) parseStr() (string, error) {
+	i := bytes.IndexByte(p.enc[p.i:], ':')
 	// no ':' in the text => invalid string
 	if i < 0 {
-		return "", p.err(parseErrInvalidStr, -1)
-	}
-	n, err := strconv.Atoi(p.enc[p.i : p.i+i])
+		return "", p.err("invalid string", -1)
+    }
+	n, ok := fromAscii(p.enc[p.i:], i)
 	// length isn't properly specified => invalid string
-	if err != nil {
-		return "", p.err(parseErrInvalidStr, -1)
+	if !ok {
+		return "", p.err("invalid string length specifier", -1)
 	}
 	p.i += i + 1
-	text := p.enc[p.i : p.i+n]
+	text := string(p.enc[p.i : p.i+n])
 	p.i += n // advances the parser to the next token
 	return text, nil
 }
 
 // Parses integers: i<num>e
-func (p *Parser) ParseInt() (int, error) {
-	end := strings.IndexByte(p.enc[p.i:], 'e')
+func (p *parser) parseInt() (int, error) {
+	if p.enc[p.i] != 'i' {
+		return 0, p.err("invalid integer", -1)
+	}
+	end := bytes.IndexByte(p.enc[p.i:], 'e')
 	// no terminating 'e' => unbalanced delimiter error
 	if end < 0 {
 		return 0, p.errDelim("i", p.i)
 	}
-	num, err := strconv.Atoi(p.enc[p.i+1 : p.i+end])
+	num, ok := fromAscii(p.enc[p.i+1:], end-1)
 	// invalid integer value => invalid integer
-	if err != nil {
-		return 0, p.err(parseErrInvalidInt, p.i+end+1)
+	if !ok {
+		return 0, p.err("invalid integer value", p.i+end+1)
 	}
 	p.i += end + 1 // advances the parser to the next token
 	return num, nil
 }
 
 // Parses lists: l(<value>*)e
-func (p *Parser) ParseList() ([]any, error) {
+func (p *parser) parseList() ([]any, error) {
+	if p.enc[p.i] != 'l' {
+		return nil, p.err("invalid list", -1)
+	}
 	start := p.i
 	p.i++ // advances past the 'l'
 	vals := make([]any, 0, 64)
 	if p.i >= len(p.enc) {
 		// missing terminating 'e' => unbalanced delimiter error
-		return vals, p.errDelim("l", start)
+		return nil, p.errDelim("l", start)
 	}
 	for p.enc[p.i] != 'e' {
-		v, err := p.parse()
+		v, err := p.parseVal()
 		if err != nil {
 			// invalid value in the list => invalid list
-			return vals, err
+			return nil, err
 		}
 		vals = append(vals, v)
 		if p.i >= len(p.enc) {
 			// missing terminating 'e' => unbalanced delimiter error
-			return vals, p.errDelim("l", start)
+			return nil, p.errDelim("l", start)
 		}
 	}
 	p.i++ // advances past the 'e'
@@ -167,49 +168,52 @@ func (p *Parser) ParseList() ([]any, error) {
 }
 
 // Parses dicts: d(<key><value>)*e
-func (p *Parser) ParseDict() (map[string]any, error) {
+func (p *parser) parseDict() (map[string]any, error) {
+	if p.enc[p.i] != 'd' {
+		return nil, p.err("invalid dictionary", -1)
+	}
 	start := p.i
 	p.i++ // advances past the 'd'
 	dict := make(map[string]any)
 	if p.i >= len(p.enc) {
 		// missing terminating 'e' => unbalanced delimiter error
-		return dict, p.errDelim("d", start)
+		return nil, p.errDelim("d", start)
 	}
 	for p.enc[p.i] != 'e' {
-		key, err := p.ParseStr() // keys must be strings
+		key, err := p.parseStr() // keys must be strings
 		if err != nil {
 			// invalid key => invalid dict
-			return dict, err
+			return nil, err
 		}
-		val, err := p.parse()
+		val, err := p.parseVal()
 		if err != nil {
 			// invalid value => invalid dict
-			return dict, err
+			return nil, err
 		}
 		dict[key] = val
 		if p.i >= len(p.enc) {
 			// missing terminating 'e' => unbalanced delimiter error
-			return dict, p.errDelim("d", start)
+			return nil, p.errDelim("d", start)
 		}
 	}
 	p.i++ // advances past the 'e'
 	return dict, nil
 }
 
-// General parsing method (don't use externally)
-func (p *Parser) parse() (any, error) {
+// General parsing method (don't use outside of this file)
+func (p *parser) parseVal() (any, error) {
 	// Check type id character
 	switch p.enc[p.i] {
 	case 'd':
 		// Dict parsing
-		return p.ParseDict()
+		return p.parseDict()
 	case 'l':
 		// List parsing
-		return p.ParseList()
+		return p.parseList()
 	case 'i':
 		// Integer parsing
-		return p.ParseInt()
+		return p.parseInt()
 	}
 	// Either string parsing or an error
-	return p.ParseStr()
+	return p.parseStr()
 }
