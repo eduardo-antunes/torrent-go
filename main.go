@@ -18,40 +18,29 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 
-    "internal/metainfo"
+	"github.com/eduardo-antunes/torrent-go/internal/benc"
 )
 
-type TrackerParams struct {
-	infoHash   []byte
-	peerId     []byte
-	port       uint16
-	uploaded   int
-	downloaded int
-	left       int
-	numWant    int
-	compact    bool
-}
-
-func usage(prog string) {
-	fmt.Printf("usage: %s <file.torrent>\n", prog)
-}
 
 func main() {
 	if len(os.Args) < 2 {
-		usage(os.Args[0])
-        return
+		fmt.Printf("usage: %s <file.torrent>\n", os.Args[0])
+		return
 	}
-	torrent, err := os.ReadFile(os.Args[1])
+	contents, err := os.ReadFile(os.Args[1])
 	if err != nil {
 		fmt.Printf("Could not open torrent file %s\n", os.Args[1])
 		return
 	}
-    meta, err := metainfo.ParseMetaInfo(torrent)
-    if err != nil {
-        fmt.Println(err)
-        return
-    }
-    fmt.Println(meta)
+	torrent, err := benc.ParseMetaInfo(contents)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+    announceUrl, _ := url.Parse(torrent.Announce)
+    query := NewTrackerQuery(string(torrent.InfoHash[:]), torrent.Info.Length, 6881)
+    TrackerAnnounce(announceUrl, query)
 }

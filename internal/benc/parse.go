@@ -14,45 +14,25 @@
  *  limitations under the License.
  */
 
-/* The BitTorrent protocol makes use of a small data markup language called
- * 'bencoding' by the official spec. Here, I will call it B-encoding. It
- * determines a standard text representation for strings, integers, lists and
- * dictionaries. In a nutshell:
- * - Strings => <length>:<text>
- * - Integers => i<num>e
- * - Lists => l(<value>)*e
- * - Dicts => d(<key><value>)*e
- * Dictionary keys must be strings, all numbers must be represented in base 10
- * and aren't supposed to be 0-prefixed.
- *
- * This file implements a simple parser for B-encoding.
- */
+// The BitTorrent protocol makes use of a small data markup language called
+// 'bencoding' by the official spec. Here, I will call it B-encoding. It
+// determines a standard text representation for strings, integers, lists and
+// dictionaries. In a nutshell:
+// - Strings => <length>:<text>
+// - Integers => i<num>e
+// - Lists => l(<value>)*e
+// - Dicts => d(<key><value>)*e
+// Dictionary keys must be strings, all numbers must be represented in base 10
+// and aren't supposed to be 0-prefixed.
 
-package metainfo
+package benc
 
 import (
 	"bytes"
 	"fmt"
 )
 
-// A parse error is defined by its reason, a textual context extracted from
-// the encoded text (so that the user may quickly see why the error happened)
-// and the position (column) where it happened
-type parseError struct {
-	reason, context string
-	pos             int
-}
-
-func (err *parseError) Error() string {
-	return fmt.Sprintf(`[!] Parsing error at column %d: %s
-Relevant portion of the text: %s`, err.pos, err.reason, err.context)
-}
-
-// "Union" type for generic B-encoded values
-type value struct {
-
-}
-
+// Parsing state
 type parser struct {
 	enc []byte // B-encoded text
 	i   int    // current position in the encoded string
@@ -66,26 +46,20 @@ func newParser(enc []byte) *parser {
 // going from the current parsing position to the endContext parameter. If
 // endContext is negative, the whole string after the current position is used
 // as context
-func (p *parser) err(reason string, endContext int) *parseError {
+func (p *parser) err(reason string, endContext int) error {
 	if endContext < 0 {
 		endContext = len(p.enc)
 	}
-	return &parseError{
-		reason:  reason,
-		context: string(p.enc[p.i:endContext]),
-		pos:     p.i + 1,
-	}
+    return fmt.Errorf("[!] Parsing error at column %d: %s\nEncoded text: %s",
+        p.i + 1, reason, string(p.enc[p.i:endContext]))
 }
 
 // Reports delimiter errors specifically, where the context is the delimiter
 // itself and its position is used as the error position, instead of the
 // current one. This makes error messages clearer
-func (p *parser) errDelim(delim string, start int) *parseError {
-	return &parseError{
-		reason:  fmt.Sprintf("unmatched '%s' delimiter", delim),
-		context: delim,
-		pos:     start + 1,
-	}
+func (p *parser) errDelim(delim string, start int) error {
+    return fmt.Errorf("[!] Parsing error at column %d: unmatched '%s' delimiter",
+        start + 1, delim)
 }
 
 // Convert fixed-size ASCII bytes to int

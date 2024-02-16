@@ -14,12 +14,9 @@
  *  limitations under the License.
  */
 
-/* Encode Go data structures into text via BitTorrent's B-encoding. B-encoding
- * is already extensively described in the parse.go file, which effectively
- * does the opposite from what is done here.
- */
+// Functions to represent Go data structures in text via B-encoding
 
-package metainfo
+package benc
 
 import (
 	"fmt"

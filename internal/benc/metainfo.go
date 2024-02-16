@@ -14,31 +14,26 @@
  *  limitations under the License.
  */
 
-/* While the parser component of this package translates B-encoded text into
- * unstructured dictionaries, this file translates those dictionaries into
- * more useful data structures. It also verifies the validity of torrent files.
- * Of course, most of the heavy lifting is handled by the excellent
- * mapstructure library.
- */
+// While the parser component of this package translates B-encoded text into
+// unstructured dictionaries, this file translates those dictionaries into
+// more useful data structures. It also verifies the validity of torrent files.
+// Of course, most of the heavy lifting is handled by the excellent
+// mapstructure library.
 
-package metainfo
+package benc
 
 import (
+	"crypto/sha1"
 	"fmt"
 
 	"github.com/mitchellh/mapstructure"
 )
 
-type metaInfoError string // simple error type for now
-
-func (err metaInfoError) Error() string {
-	return fmt.Sprintf("[!] Metainfo parsing error: %s", string(err))
-}
-
 // Torrent metainfo structure, parsed from .torrent files
 type MetaInfo struct {
 	Announce     string
-	Info         TorrentInfo
+	Info         fileInfo
+	InfoHash     [20]byte
 	CreationDate int64  `mapstructure:"creation date"`
 	CreatedBy    string `mapstructure:"created by"`
 	Comment      string
@@ -46,7 +41,7 @@ type MetaInfo struct {
 
 // The info field of the metainfo structure, probably the most important
 // component of any torrent file. Single file mode only for now
-type TorrentInfo struct {
+type fileInfo struct {
 	Name        string
 	Length      int
 	PieceLength int `mapstructure:"piece length"`
@@ -58,12 +53,17 @@ func ParseMetaInfo(fileContents []byte) (*MetaInfo, error) {
 	p := newParser(fileContents)
 	rawMetaInfo, err := p.parseDict()
 	if err != nil {
-		return nil, metaInfoError("not a proper B-encoded dictionary")
+		return nil, err
 	}
 	metaInfo := new(MetaInfo)
 	err = mapstructure.Decode(rawMetaInfo, metaInfo)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("[!] Malformed torrent file\n%w", err)
 	}
+
+	// Some metainfo fields (notably InfoHash) are not directly present in the
+	// torrent file, but must instead be computed from it
+    bencInfo := encodeDict(rawMetaInfo["info"].(map[string]any))
+    metaInfo.InfoHash = sha1.Sum([]byte(bencInfo))
 	return metaInfo, nil
 }
