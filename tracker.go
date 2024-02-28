@@ -18,28 +18,27 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"math/rand"
-	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 )
 
 // Parameters for tracker requests
-type TrackerQuery struct {
-	infoHash   string // torrent ID
-	peerId     string // peer ID of this computer
+type TrackerRequest struct {
+	infoHash   string // torrent ID (hash of info field)
+	peerId     string // peer ID (indentifies this computer)
 	event      string // one of started, stopped or completed
-	port       int    // network port being used
-	uploaded   int    // # of bytes uploaded
-	downloaded int    // # of bytes downloaded
-	left       int    // # of bytes left for completion
+	port       uint16 // network port being used
+	uploaded   uint64 // # of bytes uploaded
+	downloaded uint64 // # of bytes downloaded
+	left       uint64 // # of bytes left for completion
 }
 
-// Initialize a new tracker query
-func NewTrackerQuery(infoHash string, torrentLength, port int) *TrackerQuery {
-	return &TrackerQuery{
+// Create a tracker request object corresponding to the initial, "announce"
+// request that is first sent to the tracker
+func NewTrackerAnnounce(infoHash string, torrentLength uint64,
+	port uint16) *TrackerRequest {
+	return &TrackerRequest{
 		infoHash:   infoHash,
 		peerId:     generatePeerId(),
 		event:      "started",
@@ -50,31 +49,12 @@ func NewTrackerQuery(infoHash string, torrentLength, port int) *TrackerQuery {
 	}
 }
 
-func TrackerAnnounce(announce *url.URL, tq *TrackerQuery) error {
-	// Very boring, but functional code to build the raw query
-	var vals url.Values
-	vals.Add("peer_id", url.QueryEscape(tq.peerId))
-	vals.Add("info_hash", url.QueryEscape(tq.infoHash))
-	vals.Add("downloaded", strconv.Itoa(tq.downloaded))
-	vals.Add("uploaded", strconv.Itoa(tq.uploaded))
-	vals.Add("port", strconv.Itoa(tq.port))
-	vals.Add("left", strconv.Itoa(tq.left))
-	vals.Add("event", tq.event)
-	announce.RawQuery = vals.Encode()
-
-	resp, err := http.Get(announce.String())
-	if err != nil {
-		return fmt.Errorf("[!] Could not make HTTP get request: %w", err)
-	}
-    defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("[!] HTTP response with bad status code: %d",
-			resp.StatusCode)
-	}
-    // The text variable is B-encoded
-    text, _ := io.ReadAll(resp.Body)
-    fmt.Println(string(text))
-	return nil
+// Encode the tracker request parameters into a query string
+func (req *TrackerRequest) Query() string {
+	return fmt.Sprintf("info_hash=%s&peer_id=%s&event=%s&port=%v&uploaded=%v"+
+		"&downloaded=%v&left=%v&compact=1", url.QueryEscape(req.infoHash),
+		url.QueryEscape(req.peerId), req.event, req.port, req.uploaded,
+		req.downloaded, req.left)
 }
 
 // Generates a semi-random peer ID for this computer

@@ -18,12 +18,10 @@ package main
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 
 	"github.com/eduardo-antunes/torrent-go/internal/benc"
 )
-
 
 func main() {
 	if len(os.Args) < 2 {
@@ -35,12 +33,10 @@ func main() {
 		fmt.Printf("Could not open torrent file %s\n", os.Args[1])
 		return
 	}
-	torrent, err := benc.ParseMetaInfo(contents)
+	torrent, err := benc.ParseTorrent(contents)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-    announceUrl, _ := url.Parse(torrent.Announce)
-    query := NewTrackerQuery(string(torrent.InfoHash[:]), torrent.Info.Length, 6881)
-    TrackerAnnounce(announceUrl, query)
+	fmt.Printf("%+v\n", torrent)
 }

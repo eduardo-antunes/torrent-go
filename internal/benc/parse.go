@@ -50,16 +50,16 @@ func (p *parser) err(reason string, endContext int) error {
 	if endContext < 0 {
 		endContext = len(p.enc)
 	}
-    return fmt.Errorf("[!] Parsing error at column %d: %s\nEncoded text: %s",
-        p.i + 1, reason, string(p.enc[p.i:endContext]))
+	return fmt.Errorf("[!] Parsing error at column %d: %s\nEncoded text: %s",
+		p.i+1, reason, string(p.enc[p.i:endContext]))
 }
 
 // Reports delimiter errors specifically, where the context is the delimiter
 // itself and its position is used as the error position, instead of the
 // current one. This makes error messages clearer
 func (p *parser) errDelim(delim string, start int) error {
-    return fmt.Errorf("[!] Parsing error at column %d: unmatched '%s' delimiter",
-        start + 1, delim)
+	return fmt.Errorf("[!] Parsing error at column %d: unmatched '%s' delimiter",
+		start+1, delim)
 }
 
 // Convert fixed-size ASCII bytes to int
@@ -82,7 +82,7 @@ func (p *parser) parseStr() (string, error) {
 	// no ':' in the text => invalid string
 	if i < 0 {
 		return "", p.err("invalid string", -1)
-    }
+	}
 	n, ok := fromAscii(p.enc[p.i:], i)
 	// length isn't properly specified => invalid string
 	if !ok {
